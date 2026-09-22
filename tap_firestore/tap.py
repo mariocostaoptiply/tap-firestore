@@ -67,6 +67,10 @@ class TapFirestore(Tap):
                                         "type": "array",
                                         "items": {"type": "string"},
                                     },
+                                    "end_delay_minutes": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                    },
                                 },
                                 "additionalProperties": False,
                             },

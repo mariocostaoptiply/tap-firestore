@@ -1,7 +1,7 @@
 """Base Firestore stream class used by the reusable extension package."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional, Tuple, Union
 
 from singer_sdk.plugin_base import PluginBase as TapBaseClass
@@ -68,6 +68,7 @@ class ChangesStream(Stream):
         start_date: Optional[Any] = None,
         source_config: Optional[dict] = None,
         raw_payload: bool = False,
+        end_delay_minutes: int = 0,
     ) -> None:
         super().__init__(name=name, schema=schema, tap=tap)
         self.db = db
@@ -76,6 +77,7 @@ class ChangesStream(Stream):
         self.state_stream_name = state_stream_name or self.name
         self.start_date = start_date
         self.raw_payload = raw_payload
+        self.end_delay_minutes = end_delay_minutes
         if source_config:
             self._config = {**dict(tap.config), **source_config}
 
@@ -121,12 +123,19 @@ class ChangesStream(Stream):
                     str(start_value).replace("Z", "+00:00")
                 )
 
+        end_dt = None
+        if self.end_delay_minutes:
+            end_dt = datetime.now(timezone.utc) - timedelta(
+                minutes=self.end_delay_minutes
+            )
+
         self.logger.info(
-            "Receiver query collection='%s' entity='%s' tenant='%s' start='%s' state_stream='%s'",
+            "Receiver query collection='%s' entity='%s' tenant='%s' start='%s' end='%s' state_stream='%s'",
             collection_name,
             self.entity_type,
             tenant_uuid,
             start_dt.isoformat() if start_dt else None,
+            end_dt.isoformat() if end_dt else None,
             self.state_stream_name,
         )
 
@@ -139,6 +148,8 @@ class ChangesStream(Stream):
 
         if start_dt:
             query = query.where(filter=FieldFilter("received_at", ">", start_dt))
+        if end_dt:
+            query = query.where(filter=FieldFilter("received_at", "<", end_dt))
 
         last_doc = None
         while True:

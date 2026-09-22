@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -89,6 +90,33 @@ class FakeDb:
         return FakeCollection(self.tenant)
 
 
+class RecordingQuery:
+    def __init__(self):
+        self.filters = []
+
+    def where(self, *, filter):
+        self.filters.append(filter)
+        return self
+
+    def order_by(self, field):
+        return self
+
+    def limit(self, size):
+        return self
+
+    def stream(self):
+        return []
+
+
+class RecordingDb:
+    def __init__(self):
+        self.query = RecordingQuery()
+
+    def collection(self, name):
+        assert name == "picqer_changes"
+        return self.query
+
+
 def build_extension(state=None):
     tap = DummyTap(config={}, state=state or {})
     extension = FirestoreExtension(
@@ -101,7 +129,10 @@ def build_extension(state=None):
             "client_email": "test@example.com",
             "collection_name": "picqer_changes",
             "tap_streams": {
-                "orders": "orders",
+                "orders": {
+                    "entity_type": "orders",
+                    "end_delay_minutes": 5,
+                },
                 "products": "products",
             },
             "receiver_only": {
@@ -320,6 +351,7 @@ def test_first_run_uses_receiver_for_tap_streams():
         "deleted_orders",
     ]
     assert discovered[0].state_stream_name == "receiver_orders"
+    assert discovered[0].end_delay_minutes == 5
     assert discovered[0].schema["properties"]["received_at"]["format"] == "date-time"
     assert discovered[2].state_stream_name == "receiver_deleted_orders"
     assert discovered[2].raw_payload is True
@@ -340,6 +372,27 @@ def test_receiver_runs_even_without_receiver_state():
         "deleted_orders",
     ]
     assert discovered[0].config["collection_name"] == "picqer_changes"
+
+
+def test_end_delay_adds_received_at_upper_bound():
+    tap, extension = build_extension()
+    stream = extension.discover_streams(
+        [OrdersHostStream(tap=tap), ProductsHostStream(tap=tap)]
+    )[0]
+    db = RecordingDb()
+    stream.db = db
+
+    earliest_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    list(stream.get_records(None))
+    latest_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+    upper_bounds = [
+        item.value
+        for item in db.query.filters
+        if item.field_path == "received_at" and item.op_string == "<"
+    ]
+    assert len(upper_bounds) == 1
+    assert earliest_cutoff <= upper_bounds[0] <= latest_cutoff
 
 
 def test_string_mapping_is_normalized_for_tap_and_receiver_only():

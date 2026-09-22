@@ -100,6 +100,7 @@ class FirestoreExtension:
                     start_date=self.config.get("start_date"),
                     source_config=self.config,
                     raw_payload=False,
+                    end_delay_minutes=stream_config.get("end_delay_minutes", 0),
                 )
             )
 

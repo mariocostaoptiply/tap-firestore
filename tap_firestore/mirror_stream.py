@@ -23,6 +23,7 @@ class FirestoreMirrorStream(ChangesStream):
         start_date=None,
         source_config=None,
         raw_payload: bool = False,
+        end_delay_minutes: int = 0,
     ) -> None:
         super().__init__(
             tap=tap,
@@ -34,6 +35,7 @@ class FirestoreMirrorStream(ChangesStream):
             start_date=start_date,
             source_config=source_config,
             raw_payload=raw_payload,
+            end_delay_minutes=end_delay_minutes,
         )
         self.primary_keys = primary_keys
         self.replication_key = "received_at"
